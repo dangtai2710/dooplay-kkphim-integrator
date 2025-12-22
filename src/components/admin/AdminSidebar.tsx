@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { 
   LayoutDashboard, 
   Film, 
@@ -9,10 +10,14 @@ import {
   Database,
   Bell,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  Calendar,
+  Tag,
+  Clapperboard,
+  UserCircle,
+  List
 } from "lucide-react";
-import { NavLink, useNavigate } from "react-router-dom";
-import { useLocation } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
   Sidebar,
@@ -35,15 +40,22 @@ import {
 
 const mainNavItems = [
   { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
-  { title: "Quản lý phim", url: "/admin/movies", icon: Film },
-  { title: "Thể loại", url: "/admin/categories", icon: FolderOpen },
+];
+
+const movieManagementItems = [
+  { title: "Danh sách phim", url: "/admin/movies", icon: List },
+  { title: "Thể loại", url: "/admin/genres", icon: FolderOpen },
   { title: "Quốc gia", url: "/admin/countries", icon: Globe },
+  { title: "Năm", url: "/admin/years", icon: Calendar },
+  { title: "Tags", url: "/admin/tags", icon: Tag },
+  { title: "Đạo diễn", url: "/admin/directors", icon: Clapperboard },
+  { title: "Diễn viên", url: "/admin/actors", icon: UserCircle },
 ];
 
 const systemNavItems = [
   { title: "Thống kê", url: "/admin/analytics", icon: BarChart3 },
   { title: "Người dùng", url: "/admin/users", icon: Users },
-  { title: "API & Crawl", url: "/admin/api", icon: Database },
+  { title: "Crawl Phim", url: "/admin/api", icon: Database },
   { title: "Thông báo", url: "/admin/notifications", icon: Bell },
   { title: "Cài đặt", url: "/admin/settings", icon: Settings },
 ];
@@ -54,6 +66,10 @@ export function AdminSidebar() {
   const { state } = useSidebar();
   const { user, signOut } = useAuth();
   const isCollapsed = state === "collapsed";
+  
+  const [movieManagementOpen, setMovieManagementOpen] = useState(
+    movieManagementItems.some(item => location.pathname === item.url)
+  );
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -107,6 +123,49 @@ export function AdminSidebar() {
               ))}
             </SidebarMenu>
           </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Movie Management Collapsible */}
+        <SidebarGroup className="mt-2">
+          <Collapsible open={movieManagementOpen} onOpenChange={setMovieManagementOpen}>
+            <CollapsibleTrigger className="w-full">
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg transition-colors hover:bg-muted/50 cursor-pointer">
+                <div className="flex items-center gap-3">
+                  <Film className="h-5 w-5" />
+                  {!isCollapsed && <span className="text-sm font-medium">Quản lý phim</span>}
+                </div>
+                {!isCollapsed && (
+                  <ChevronDown className={`h-4 w-4 transition-transform ${movieManagementOpen ? "rotate-180" : ""}`} />
+                )}
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <SidebarGroupContent className="pl-4 mt-1">
+                <SidebarMenu>
+                  {movieManagementItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton 
+                        asChild 
+                        isActive={isActive(item.url)}
+                        tooltip={item.title}
+                      >
+                        <NavLink 
+                          to={item.url} 
+                          end 
+                          className={({ isActive }) => 
+                            `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-muted/50 text-sm ${isActive ? "bg-primary/10 text-primary" : ""}`
+                          }
+                        >
+                          <item.icon className="h-4 w-4" />
+                          {!isCollapsed && <span>{item.title}</span>}
+                        </NavLink>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </CollapsibleContent>
+          </Collapsible>
         </SidebarGroup>
 
         <SidebarGroup className="mt-4">
