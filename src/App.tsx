@@ -8,6 +8,7 @@ import MovieDetail from "./pages/MovieDetail";
 import MovieList from "./pages/MovieList";
 import Search from "./pages/Search";
 import Admin from "./pages/Admin";
+import ApiCrawl from "./pages/admin/ApiCrawl";
 import NotFound from "./pages/NotFound";
 import { Header } from "./components/Header";
 
@@ -27,7 +28,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/admin/*" element={<Admin />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/admin/api" element={<ApiCrawl />} />
           <Route path="/*" element={
             <>
               <Header />
