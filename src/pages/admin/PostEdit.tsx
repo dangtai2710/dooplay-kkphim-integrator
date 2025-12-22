@@ -27,6 +27,7 @@ interface PostFormData {
   excerpt: string;
   thumbnail_url: string;
   status: string;
+  category_id: string | null;
   seo_title: string;
   seo_description: string;
   seo_keyword: string;
@@ -46,10 +47,25 @@ const PostEdit = () => {
     excerpt: "",
     thumbnail_url: "",
     status: "draft",
+    category_id: null,
     seo_title: "",
     seo_description: "",
     seo_keyword: "",
     schema_json: "",
+  });
+
+  // Fetch post categories
+  const { data: categories } = useQuery({
+    queryKey: ["post-categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("post_categories")
+        .select("*")
+        .is("deleted_at", null)
+        .order("name");
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const { data: post, isLoading } = useQuery({
@@ -76,6 +92,7 @@ const PostEdit = () => {
         excerpt: post.excerpt || "",
         thumbnail_url: post.thumbnail_url || "",
         status: post.status || "draft",
+        category_id: post.category_id || null,
         seo_title: post.seo_title || "",
         seo_description: post.seo_description || "",
         seo_keyword: post.seo_keyword || "",
@@ -315,6 +332,29 @@ const PostEdit = () => {
                       <SelectContent>
                         <SelectItem value="draft">Bản nháp</SelectItem>
                         <SelectItem value="published">Xuất bản</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="category">Danh mục</Label>
+                    <Select
+                      value={formData.category_id || "none"}
+                      onValueChange={(value) => setFormData((prev) => ({ 
+                        ...prev, 
+                        category_id: value === "none" ? null : value 
+                      }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chọn danh mục" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Không có danh mục</SelectItem>
+                        {categories?.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

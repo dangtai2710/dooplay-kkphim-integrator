@@ -22,6 +22,7 @@ import DirectorsManagement from "./pages/admin/DirectorsManagement";
 import ActorsManagement from "./pages/admin/ActorsManagement";
 import MovieEdit from "./pages/admin/MovieEdit";
 import PostsManagement from "./pages/admin/PostsManagement";
+import PostCategoriesManagement from "./pages/admin/PostCategoriesManagement";
 import PostEdit from "./pages/admin/PostEdit";
 import TrashManagement from "./pages/admin/TrashManagement";
 import NotFound from "./pages/NotFound";
@@ -146,6 +147,14 @@ const App = () => (
               element={
                 <ProtectedAdminRoute>
                   <PostEdit />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/post-categories"
+              element={
+                <ProtectedAdminRoute>
+                  <PostCategoriesManagement />
                 </ProtectedAdminRoute>
               }
             />

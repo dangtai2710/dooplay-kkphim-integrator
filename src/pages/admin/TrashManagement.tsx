@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2, RotateCcw, AlertTriangle, Film, FileText, FolderOpen, Globe, Calendar, Tag, Clapperboard, UserCircle } from "lucide-react";
+import { Trash2, RotateCcw, AlertTriangle, Film, FileText, FolderOpen, Globe, Calendar, Tag, Clapperboard, UserCircle, Clock, Eraser } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,9 +32,11 @@ import {
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, differenceInDays, addDays } from "date-fns";
 
-type TrashItemType = "movies" | "posts" | "genres" | "countries" | "years" | "tags" | "directors" | "actors";
+type TrashItemType = "movies" | "posts" | "genres" | "countries" | "years" | "tags" | "directors" | "actors" | "post_categories";
+
+const RETENTION_DAYS = 30;
 
 const TrashManagement = () => {
   const queryClient = useQueryClient();
@@ -42,20 +44,34 @@ const TrashManagement = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showEmptyTrashDialog, setShowEmptyTrashDialog] = useState(false);
 
-  // Fetch deleted items
+  // Fetch deleted items using RPC or direct query that bypasses normal RLS for admins
   const { data: deletedItems, isLoading } = useQuery({
     queryKey: ["trash", activeTab],
     queryFn: async () => {
+      // For items with deleted_at, query with not null filter
       const { data, error } = await supabase
         .from(activeTab)
         .select("*")
         .not("deleted_at", "is", null)
         .order("deleted_at", { ascending: false });
-      if (error) throw error;
+      
+      if (error) {
+        console.error("Trash query error:", error);
+        throw error;
+      }
       return data || [];
     },
   });
+
+  // Calculate days remaining before auto-delete
+  const getDaysRemaining = (deletedAt: string): number => {
+    const deleteDate = new Date(deletedAt);
+    const expiryDate = addDays(deleteDate, RETENTION_DAYS);
+    const daysLeft = differenceInDays(expiryDate, new Date());
+    return Math.max(0, daysLeft);
+  };
 
   // Restore mutation
   const restoreMutation = useMutation({
@@ -98,6 +114,26 @@ const TrashManagement = () => {
     },
   });
 
+  // Empty all trash for current tab
+  const emptyTrashMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from(activeTab)
+        .delete()
+        .not("deleted_at", "is", null);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["trash", activeTab] });
+      toast.success("Đã dọn sạch thùng rác");
+      setSelectedIds([]);
+      setShowEmptyTrashDialog(false);
+    },
+    onError: () => {
+      toast.error("Không thể dọn thùng rác");
+    },
+  });
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedIds(deletedItems?.map((item: any) => item.id) || []);
@@ -133,6 +169,7 @@ const TrashManagement = () => {
       tags: Tag,
       directors: Clapperboard,
       actors: UserCircle,
+      post_categories: FolderOpen,
     };
     return icons[type];
   };
@@ -140,6 +177,7 @@ const TrashManagement = () => {
   const tabItems: { value: TrashItemType; label: string }[] = [
     { value: "movies", label: "Phim" },
     { value: "posts", label: "Bài viết" },
+    { value: "post_categories", label: "Danh mục BV" },
     { value: "genres", label: "Thể loại" },
     { value: "countries", label: "Quốc gia" },
     { value: "years", label: "Năm" },
@@ -163,9 +201,22 @@ const TrashManagement = () => {
                 </div>
                 <div>
                   <h1 className="text-xl font-bold">Thùng rác</h1>
-                  <p className="text-sm text-muted-foreground">Khôi phục hoặc xóa vĩnh viễn nội dung đã xóa</p>
+                  <p className="text-sm text-muted-foreground">
+                    Nội dung sẽ tự động xóa sau {RETENTION_DAYS} ngày
+                  </p>
                 </div>
               </div>
+              <div className="flex-1" />
+              {deletedItems && deletedItems.length > 0 && (
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => setShowEmptyTrashDialog(true)}
+                >
+                  <Eraser className="h-4 w-4 mr-2" />
+                  Dọn thùng rác
+                </Button>
+              )}
             </div>
           </header>
 
@@ -228,6 +279,7 @@ const TrashManagement = () => {
                           </TableHead>
                           <TableHead>Tên</TableHead>
                           <TableHead>Ngày xóa</TableHead>
+                          <TableHead>Còn lại</TableHead>
                           <TableHead className="text-right">Thao tác</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -238,69 +290,82 @@ const TrashManagement = () => {
                               <TableCell><div className="h-4 w-4 bg-muted animate-pulse rounded" /></TableCell>
                               <TableCell><div className="h-4 w-48 bg-muted animate-pulse rounded" /></TableCell>
                               <TableCell><div className="h-4 w-24 bg-muted animate-pulse rounded" /></TableCell>
+                              <TableCell><div className="h-4 w-16 bg-muted animate-pulse rounded" /></TableCell>
                               <TableCell><div className="h-4 w-20 bg-muted animate-pulse rounded ml-auto" /></TableCell>
                             </TableRow>
                           ))
                         ) : deletedItems?.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                               Thùng rác trống
                             </TableCell>
                           </TableRow>
                         ) : (
-                          deletedItems?.map((item: any) => (
-                            <TableRow key={item.id} className="border-border/50">
-                              <TableCell>
-                                <Checkbox
-                                  checked={selectedIds.includes(item.id)}
-                                  onCheckedChange={(checked) => handleSelectOne(item.id, !!checked)}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  {(() => {
-                                    const Icon = getTabIcon(activeTab);
-                                    return (
-                                      <div className="w-10 h-10 rounded bg-muted flex items-center justify-center">
-                                        <Icon className="h-4 w-4 text-muted-foreground" />
-                                      </div>
-                                    );
-                                  })()}
-                                  <span className="font-medium">{getItemName(item)}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {item.deleted_at && format(new Date(item.deleted_at), "dd/MM/yyyy HH:mm")}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedIds([item.id]);
-                                      setShowRestoreDialog(true);
-                                    }}
+                          deletedItems?.map((item: any) => {
+                            const daysRemaining = getDaysRemaining(item.deleted_at);
+                            return (
+                              <TableRow key={item.id} className="border-border/50">
+                                <TableCell>
+                                  <Checkbox
+                                    checked={selectedIds.includes(item.id)}
+                                    onCheckedChange={(checked) => handleSelectOne(item.id, !!checked)}
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    {(() => {
+                                      const Icon = getTabIcon(activeTab);
+                                      return (
+                                        <div className="w-10 h-10 rounded bg-muted flex items-center justify-center">
+                                          <Icon className="h-4 w-4 text-muted-foreground" />
+                                        </div>
+                                      );
+                                    })()}
+                                    <span className="font-medium">{getItemName(item)}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {item.deleted_at && format(new Date(item.deleted_at), "dd/MM/yyyy HH:mm")}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={daysRemaining <= 7 ? "destructive" : "secondary"}
+                                    className="gap-1"
                                   >
-                                    <RotateCcw className="h-4 w-4 mr-1" />
-                                    Khôi phục
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-destructive hover:text-destructive"
-                                    onClick={() => {
-                                      setSelectedIds([item.id]);
-                                      setShowDeleteDialog(true);
-                                    }}
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-1" />
-                                    Xóa
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
+                                    <Clock className="h-3 w-3" />
+                                    {daysRemaining} ngày
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setSelectedIds([item.id]);
+                                        setShowRestoreDialog(true);
+                                      }}
+                                    >
+                                      <RotateCcw className="h-4 w-4 mr-1" />
+                                      Khôi phục
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-destructive hover:text-destructive"
+                                      onClick={() => {
+                                        setSelectedIds([item.id]);
+                                        setShowDeleteDialog(true);
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-1" />
+                                      Xóa
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
                         )}
                       </TableBody>
                     </Table>
@@ -347,6 +412,30 @@ const TrashManagement = () => {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Xóa vĩnh viễn
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showEmptyTrashDialog} onOpenChange={setShowEmptyTrashDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Dọn sạch thùng rác
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>Bạn đang chuẩn bị xóa vĩnh viễn <strong>tất cả</strong> nội dung trong tab "{tabItems.find(t => t.value === activeTab)?.label}".</p>
+              <p className="text-destructive font-medium">Hành động này không thể hoàn tác!</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => emptyTrashMutation.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Xóa tất cả
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
