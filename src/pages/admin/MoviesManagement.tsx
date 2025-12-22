@@ -96,7 +96,8 @@ const MoviesManagement = () => {
           movie_genres(genre_id, genres(name)),
           movie_countries(country_id, countries(name, id)),
           episodes(id)
-        `, { count: "exact" });
+        `, { count: "exact" })
+        .is("deleted_at", null);
 
       if (searchQuery) {
         query = query.or(`name.ilike.%${searchQuery}%,origin_name.ilike.%${searchQuery}%`);
@@ -133,12 +134,15 @@ const MoviesManagement = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("movies").delete().eq("id", id);
+      const { error } = await supabase
+        .from("movies")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-movies"] });
-      toast.success("Đã xóa phim thành công");
+      toast.success("Đã chuyển phim vào thùng rác");
       setDeleteId(null);
     },
     onError: () => {
@@ -148,12 +152,15 @@ const MoviesManagement = () => {
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      const { error } = await supabase.from("movies").delete().in("id", ids);
+      const { error } = await supabase
+        .from("movies")
+        .update({ deleted_at: new Date().toISOString() })
+        .in("id", ids);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-movies"] });
-      toast.success(`Đã xóa ${selectedIds.length} phim thành công`);
+      toast.success(`Đã chuyển ${selectedIds.length} phim vào thùng rác`);
       setSelectedIds([]);
       setShowBulkDeleteDialog(false);
     },
@@ -486,8 +493,7 @@ const MoviesManagement = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn có chắc chắn muốn xóa phim này? Hành động này không thể hoàn tác.
-              Tất cả dữ liệu liên quan (tập phim, thể loại, diễn viên...) sẽ bị xóa.
+              Phim sẽ được chuyển vào thùng rác. Bạn có thể khôi phục lại trong vòng 30 ngày.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -506,16 +512,9 @@ const MoviesManagement = () => {
       <AlertDialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-destructive">⚠️ Cảnh báo xóa hàng loạt</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>Bạn đang chuẩn bị xóa <strong className="text-foreground">{selectedIds.length} phim</strong>.</p>
-              <p>Hành động này sẽ xóa vĩnh viễn tất cả dữ liệu liên quan bao gồm:</p>
-              <ul className="list-disc list-inside text-sm space-y-1 mt-2">
-                <li>Thông tin phim</li>
-                <li>Tất cả các tập phim</li>
-                <li>Liên kết thể loại, quốc gia, diễn viên, đạo diễn</li>
-              </ul>
-              <p className="text-destructive font-medium mt-3">Hành động này không thể hoàn tác!</p>
+            <AlertDialogTitle>Xác nhận xóa hàng loạt</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc muốn xóa {selectedIds.length} phim đã chọn? Chúng sẽ được chuyển vào thùng rác và có thể khôi phục trong vòng 30 ngày.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

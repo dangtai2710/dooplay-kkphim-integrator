@@ -43,6 +43,7 @@ import {
 const mainNavItems = [
   { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
   { title: "Bài viết", url: "/admin/posts", icon: FileText },
+  { title: "Danh mục BV", url: "/admin/post-categories", icon: FolderOpen },
 ];
 
 const movieManagementItems = [
