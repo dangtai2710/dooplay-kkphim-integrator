@@ -1,7 +1,6 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Database,
   RefreshCw,
   CheckCircle2,
   XCircle,
@@ -9,47 +8,55 @@ import {
   Activity,
   Film,
   Loader2,
-  Link as LinkIcon,
-  FileText,
-  Settings2,
-  Image as ImageIcon,
-  Download,
-  AlertCircle,
+  Database,
+  Shuffle,
+  Play,
 } from "lucide-react";
 import { fetchNewMovies, fetchMovieDetail, fetchCategories, fetchCountries } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Badge } from "@/components/ui/badge";
 
-interface CrawlLog {
-  id: string;
-  type: string;
-  status: string;
-  movies_added: number;
-  movies_updated: number;
-  duration: string | null;
-  message: string | null;
-  created_at: string;
+interface CrawlResult {
+  url: string;
+  movieId?: string;
+  name?: string;
+  originName?: string;
+  year?: number;
+  timestamp: string;
+  status: "success" | "error" | "pending";
+  message?: string;
 }
+
+// Danh sách định dạng
+const FORMAT_OPTIONS = [
+  { id: "single", label: "Phim lẻ" },
+  { id: "series", label: "Phim bộ" },
+  { id: "hoathinh", label: "Hoạt hình" },
+  { id: "tvshows", label: "TV Shows" },
+];
+
+// Danh sách thể loại phổ biến
+const GENRE_OPTIONS = [
+  "Hành Động", "Miền Tây", "Trẻ Em", "Lịch Sử", "Cổ Trang", "Chiến Tranh", "Viễn Tưởng", "Kinh Dị", "Tài Liệu", "Bí Ẩn", "Phim 18+", "Tình Cảm", "Tâm Lý", "Thể Thao",
+  "Phiêu Lưu", "Âm Nhạc", "Gia Đình", "Học Đường", "Hài Hước", "Hình Sự", "Võ Thuật", "Khoa Học", "Thần Thoại", "Chính Kịch", "Kinh Điển"
+];
+
+// Danh sách quốc gia
+const COUNTRY_OPTIONS = [
+  "Việt Nam", "Trung Quốc", "Thái Lan", "Hồng Kông", "Pháp", "Đức", "Hà Lan", "Mexico", "Thụy Điển", "Philippines", "Đan Mạch", "Thụy Sĩ", "Ukraina", "Hàn Quốc",
+  "Âu Mỹ", "Ấn Độ", "Canada", "Tây Ban Nha", "Indonesia", "Ba Lan", "Malaysia", "Bồ Đào Nha", "UAE", "Châu Phi", "Ả Rập Xê Út", "Nhật Bản", "Đài Loan", "Anh",
+  "Quốc Gia Khác", "Thổ Nhĩ Kỳ", "Nga", "Úc", "Brazil", "Ý", "Na Uy", "Nam Phi"
+];
 
 const ApiCrawl = () => {
   const queryClient = useQueryClient();
@@ -57,29 +64,44 @@ const ApiCrawl = () => {
   // Crawl state
   const [isCrawling, setIsCrawling] = useState(false);
   const [crawlProgress, setCrawlProgress] = useState(0);
-  const [crawlMessage, setCrawlMessage] = useState("");
+  const [currentCrawling, setCurrentCrawling] = useState<string>("");
   
-  // Crawl by page range
+  // Page crawl
   const [pageFrom, setPageFrom] = useState("1");
   const [pageTo, setPageTo] = useState("1");
   
-  // Single movie crawl
-  const [singleMovieUrl, setSingleMovieUrl] = useState("");
+  // URL API
+  const [apiUrl, setApiUrl] = useState("https://phimapi.com/danh-sach/phim-moi-cap-nhat");
   
-  // Bulk crawl
-  const [bulkUrls, setBulkUrls] = useState("");
+  // Wait timeout
+  const [waitFrom, setWaitFrom] = useState("1000");
+  const [waitTo, setWaitTo] = useState("3000");
   
-  // Skip options
-  const [skipFormat, setSkipFormat] = useState(false);
-  const [skipGenre, setSkipGenre] = useState(false);
-  const [skipCountry, setSkipCountry] = useState(false);
+  // Movie list textarea
+  const [movieList, setMovieList] = useState("");
+  
+  // Skip options - formats
+  const [skipFormats, setSkipFormats] = useState<string[]>([]);
+  
+  // Skip options - genres
+  const [skipGenres, setSkipGenres] = useState<string[]>([]);
+  
+  // Skip options - countries
+  const [skipCountries, setSkipCountries] = useState<string[]>([]);
   
   // Image options
-  const [downloadThumb, setDownloadThumb] = useState(false);
-  const [thumbWidth, setThumbWidth] = useState("300");
-  const [downloadPoster, setDownloadPoster] = useState(false);
-  const [posterWidth, setPosterWidth] = useState("400");
+  const [resizeThumb, setResizeThumb] = useState(false);
+  const [thumbWidth, setThumbWidth] = useState("0");
+  const [thumbHeight, setThumbHeight] = useState("0");
+  const [resizePoster, setResizePoster] = useState(false);
+  const [posterWidth, setPosterWidth] = useState("0");
+  const [posterHeight, setPosterHeight] = useState("0");
   const [saveAsWebp, setSaveAsWebp] = useState(false);
+
+  // Crawl results
+  const [crawlResults, setCrawlResults] = useState<CrawlResult[]>([]);
+  const [successResults, setSuccessResults] = useState<CrawlResult[]>([]);
+  const [errorResults, setErrorResults] = useState<CrawlResult[]>([]);
 
   // API Status checks
   const { data: apiStatus, isLoading: checkingApi, refetch: recheckApi } = useQuery({
@@ -119,20 +141,6 @@ const ApiCrawl = () => {
     queryFn: fetchCountries,
   });
 
-  // Crawl logs from database
-  const { data: crawlLogs, isLoading: loadingLogs } = useQuery({
-    queryKey: ["crawl-logs"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("crawl_logs")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return data as CrawlLog[];
-    },
-  });
-
   // Helper function to create slug
   const createSlug = (text: string) => {
     return text
@@ -147,15 +155,31 @@ const ApiCrawl = () => {
       .trim();
   };
 
+  // Random wait
+  const randomWait = async () => {
+    const min = parseInt(waitFrom) || 1000;
+    const max = parseInt(waitTo) || 3000;
+    const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+    await new Promise(resolve => setTimeout(resolve, delay));
+  };
+
   // Main crawl function
-  const crawlMovie = async (movieSlug: string) => {
+  const crawlMovie = async (movieSlug: string): Promise<CrawlResult> => {
+    const url = `https://phimapi.com/phim/${movieSlug}`;
+    const timestamp = new Date().toISOString();
+    
     try {
       const movieData = await fetchMovieDetail(movieSlug);
       if (!movieData || !movieData.movie) {
-        return { success: false, message: `Không tìm thấy phim: ${movieSlug}` };
+        return { url, timestamp, status: "error", message: `Không tìm thấy phim: ${movieSlug}` };
       }
 
       const movie = movieData.movie;
+
+      // Check skip formats
+      if (skipFormats.length > 0 && skipFormats.includes(movie.type)) {
+        return { url, timestamp, status: "error", message: `Bỏ qua định dạng: ${movie.type}` };
+      }
       
       // Check if movie exists
       const { data: existingMovie } = await supabase
@@ -176,8 +200,8 @@ const ApiCrawl = () => {
             content: movie.content,
             type: movie.type,
             status: movie.status,
-            poster_url: saveAsWebp ? null : movie.poster_url,
-            thumb_url: saveAsWebp ? null : movie.thumb_url,
+            poster_url: movie.poster_url,
+            thumb_url: movie.thumb_url,
             trailer_url: movie.trailer_url,
             time: movie.time,
             episode_current: movie.episode_current,
@@ -190,8 +214,6 @@ const ApiCrawl = () => {
 
         if (updateError) throw updateError;
         movieId = existingMovie.id;
-        
-        return { success: true, updated: true, movieId };
       } else {
         // Insert new movie
         const { data: newMovie, error: insertError } = await supabase
@@ -203,8 +225,8 @@ const ApiCrawl = () => {
             content: movie.content,
             type: movie.type,
             status: movie.status,
-            poster_url: saveAsWebp ? null : movie.poster_url,
-            thumb_url: saveAsWebp ? null : movie.thumb_url,
+            poster_url: movie.poster_url,
+            thumb_url: movie.thumb_url,
             trailer_url: movie.trailer_url,
             time: movie.time,
             episode_current: movie.episode_current,
@@ -221,9 +243,11 @@ const ApiCrawl = () => {
       }
 
       // Process genres
-      if (!skipGenre && movie.category && movie.category.length > 0) {
-        for (const cat of movie.category) {
-          // Upsert genre
+      if (movie.category && movie.category.length > 0) {
+        const filteredCategories = movie.category.filter(
+          (cat: any) => !skipGenres.includes(cat.name)
+        );
+        for (const cat of filteredCategories) {
           const { data: genre } = await supabase
             .from("genres")
             .upsert({ name: cat.name, slug: cat.slug }, { onConflict: "slug" })
@@ -239,8 +263,11 @@ const ApiCrawl = () => {
       }
 
       // Process countries
-      if (!skipCountry && movie.country && movie.country.length > 0) {
-        for (const c of movie.country) {
+      if (movie.country && movie.country.length > 0) {
+        const filteredCountries = movie.country.filter(
+          (c: any) => !skipCountries.includes(c.name)
+        );
+        for (const c of filteredCountries) {
           const { data: country } = await supabase
             .from("countries")
             .upsert({ name: c.name, slug: c.slug }, { onConflict: "slug" })
@@ -304,7 +331,6 @@ const ApiCrawl = () => {
 
       // Process episodes
       if (movieData.episodes && movieData.episodes.length > 0) {
-        // Delete existing episodes first
         await supabase.from("episodes").delete().eq("movie_id", movieId);
         
         for (const server of movieData.episodes) {
@@ -322,15 +348,23 @@ const ApiCrawl = () => {
         }
       }
 
-      return { success: true, updated: !!existingMovie, movieId };
+      return { 
+        url, 
+        movieId, 
+        name: movie.name,
+        originName: movie.origin_name,
+        year: movie.year,
+        timestamp, 
+        status: "success" 
+      };
     } catch (error: any) {
       console.error("Error crawling movie:", error);
-      return { success: false, message: error.message };
+      return { url, timestamp, status: "error", message: error.message };
     }
   };
 
-  // Crawl by page range
-  const handleCrawlByPage = async () => {
+  // Get list movies from API
+  const handleGetListMovies = async () => {
     const from = parseInt(pageFrom);
     const to = parseInt(pageTo);
     
@@ -341,157 +375,69 @@ const ApiCrawl = () => {
 
     setIsCrawling(true);
     setCrawlProgress(0);
-    setCrawlMessage("Đang bắt đầu crawl...");
+    setCurrentCrawling("Đang lấy danh sách phim...");
     
-    const startTime = Date.now();
-    let added = 0;
-    let updated = 0;
-    let failed = 0;
+    const urls: string[] = [];
     const totalPages = to - from + 1;
 
     try {
-      // Create log entry
-      const { data: logEntry } = await supabase
-        .from("crawl_logs")
-        .insert({
-          type: `Crawl trang ${from} -> ${to}`,
-          status: "running",
-        })
-        .select()
-        .single();
-
       for (let page = from; page <= to; page++) {
-        setCrawlMessage(`Đang lấy danh sách phim trang ${page}/${to}...`);
+        setCurrentCrawling(`Đang lấy danh sách phim trang ${page}/${to}...`);
+        setCrawlProgress(((page - from) / totalPages) * 100);
         
         const moviesData = await fetchNewMovies(page);
-        if (!moviesData || !moviesData.items) continue;
-
-        const movies = moviesData.items;
-        const totalMovies = movies.length;
-
-        for (let i = 0; i < totalMovies; i++) {
-          const movie = movies[i];
-          setCrawlMessage(`Trang ${page}: Đang crawl ${i + 1}/${totalMovies} - ${movie.name}`);
-          
-          const result = await crawlMovie(movie.slug);
-          if (result.success) {
-            if (result.updated) updated++;
-            else added++;
-          } else {
-            failed++;
+        if (moviesData && moviesData.items) {
+          for (const movie of moviesData.items) {
+            urls.push(`https://phimapi.com/phim/${movie.slug}`);
           }
-
-          // Update progress
-          const pageProgress = ((page - from) / totalPages) * 100;
-          const movieProgress = ((i + 1) / totalMovies) * (100 / totalPages);
-          setCrawlProgress(Math.min(pageProgress + movieProgress, 100));
         }
       }
 
-      const duration = Math.round((Date.now() - startTime) / 1000);
-      
-      // Update log entry
-      if (logEntry) {
-        await supabase
-          .from("crawl_logs")
-          .update({
-            status: "success",
-            movies_added: added,
-            movies_updated: updated,
-            duration: `${duration}s`,
-            message: failed > 0 ? `${failed} phim lỗi` : null,
-          })
-          .eq("id", logEntry.id);
-      }
-
-      toast.success(`Hoàn tất! Thêm mới: ${added}, Cập nhật: ${updated}${failed > 0 ? `, Lỗi: ${failed}` : ""}`);
-      queryClient.invalidateQueries({ queryKey: ["crawl-logs"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-db-movies"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-movies-count"] });
-    } catch (error: any) {
-      toast.error("Lỗi khi crawl: " + error.message);
-    } finally {
-      setIsCrawling(false);
-      setCrawlProgress(0);
-      setCrawlMessage("");
-    }
-  };
-
-  // Crawl single movie
-  const handleCrawlSingle = async () => {
-    if (!singleMovieUrl.trim()) {
-      toast.error("Vui lòng nhập URL phim");
-      return;
-    }
-
-    // Extract slug from URL
-    const match = singleMovieUrl.match(/phim\/([^\/\?]+)/);
-    if (!match) {
-      toast.error("URL không hợp lệ. Ví dụ: https://phimapi.com/phim/ten-phim");
-      return;
-    }
-
-    const slug = match[1];
-    setIsCrawling(true);
-    setCrawlProgress(50);
-    setCrawlMessage(`Đang crawl phim: ${slug}...`);
-
-    const startTime = Date.now();
-
-    try {
-      const result = await crawlMovie(slug);
-      const duration = Math.round((Date.now() - startTime) / 1000);
-
-      // Create log entry
-      await supabase.from("crawl_logs").insert({
-        type: `Crawl phim: ${slug}`,
-        status: result.success ? "success" : "error",
-        movies_added: result.success && !result.updated ? 1 : 0,
-        movies_updated: result.success && result.updated ? 1 : 0,
-        duration: `${duration}s`,
-        message: result.message,
-      });
-
-      if (result.success) {
-        toast.success(result.updated ? "Đã cập nhật phim!" : "Đã thêm phim mới!");
-        setSingleMovieUrl("");
-      } else {
-        toast.error(result.message || "Lỗi khi crawl phim");
-      }
-      
-      queryClient.invalidateQueries({ queryKey: ["crawl-logs"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-db-movies"] });
+      setMovieList(urls.join("\n"));
+      toast.success(`Đã lấy được ${urls.length} phim`);
     } catch (error: any) {
       toast.error("Lỗi: " + error.message);
     } finally {
       setIsCrawling(false);
       setCrawlProgress(0);
-      setCrawlMessage("");
+      setCurrentCrawling("");
     }
   };
 
-  // Crawl bulk URLs
-  const handleCrawlBulk = async () => {
-    const urls = bulkUrls.split("\n").map(u => u.trim()).filter(u => u);
+  // Shuffle movie list
+  const handleShuffleList = () => {
+    const urls = movieList.split("\n").filter(u => u.trim());
+    for (let i = urls.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [urls[i], urls[j]] = [urls[j], urls[i]];
+    }
+    setMovieList(urls.join("\n"));
+    toast.success("Đã xáo trộn danh sách");
+  };
+
+  // Crawl movies
+  const handleCrawlMovies = async () => {
+    const urls = movieList.split("\n").map(u => u.trim()).filter(u => u);
     if (urls.length === 0) {
-      toast.error("Vui lòng nhập ít nhất một URL");
+      toast.error("Vui lòng nhập danh sách phim");
       return;
     }
 
     setIsCrawling(true);
     setCrawlProgress(0);
-    setCrawlMessage("Đang bắt đầu crawl hàng loạt...");
+    setCrawlResults([]);
+    setSuccessResults([]);
+    setErrorResults([]);
 
     const startTime = Date.now();
     let added = 0;
     let updated = 0;
-    let failed = 0;
-
+    
     try {
       const { data: logEntry } = await supabase
         .from("crawl_logs")
         .insert({
-          type: `Crawl hàng loạt (${urls.length} phim)`,
+          type: `Crawl ${urls.length} phim`,
           status: "running",
         })
         .select()
@@ -502,20 +448,40 @@ const ApiCrawl = () => {
         const match = url.match(/phim\/([^\/\?]+)/);
         
         if (!match) {
-          failed++;
+          const errorResult: CrawlResult = {
+            url,
+            timestamp: new Date().toISOString(),
+            status: "error",
+            message: "URL không hợp lệ"
+          };
+          setErrorResults(prev => [...prev, errorResult]);
           continue;
         }
 
         const slug = match[1];
-        setCrawlMessage(`Đang crawl ${i + 1}/${urls.length}: ${slug}`);
+        setCurrentCrawling(url);
         setCrawlProgress(((i + 1) / urls.length) * 100);
 
+        // Add to pending list
+        const pendingResult: CrawlResult = {
+          url,
+          timestamp: new Date().toISOString(),
+          status: "pending"
+        };
+        setCrawlResults(prev => [pendingResult, ...prev.slice(0, 6)]);
+
         const result = await crawlMovie(slug);
-        if (result.success) {
-          if (result.updated) updated++;
-          else added++;
+        
+        if (result.status === "success") {
+          added++;
+          setSuccessResults(prev => [...prev, result]);
         } else {
-          failed++;
+          setErrorResults(prev => [...prev, result]);
+        }
+
+        // Wait between requests
+        if (i < urls.length - 1) {
+          await randomWait();
         }
       }
 
@@ -529,32 +495,33 @@ const ApiCrawl = () => {
             movies_added: added,
             movies_updated: updated,
             duration: `${duration}s`,
-            message: failed > 0 ? `${failed} phim lỗi` : null,
+            message: errorResults.length > 0 ? `${errorResults.length} phim lỗi` : null,
           })
           .eq("id", logEntry.id);
       }
 
-      toast.success(`Hoàn tất! Thêm mới: ${added}, Cập nhật: ${updated}${failed > 0 ? `, Lỗi: ${failed}` : ""}`);
-      setBulkUrls("");
+      toast.success(`Hoàn tất! Thành công: ${added}, Lỗi: ${errorResults.length}`);
       queryClient.invalidateQueries({ queryKey: ["crawl-logs"] });
       queryClient.invalidateQueries({ queryKey: ["admin-db-movies"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-movies-count"] });
     } catch (error: any) {
       toast.error("Lỗi: " + error.message);
     } finally {
       setIsCrawling(false);
       setCrawlProgress(0);
-      setCrawlMessage("");
+      setCurrentCrawling("");
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Intl.DateTimeFormat("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(new Date(dateString));
+  const formatResultLine = (result: CrawlResult) => {
+    const parts = [result.url];
+    if (result.movieId) parts.push(result.movieId);
+    parts.push(result.timestamp);
+    if (result.name) parts.push(result.name);
+    if (result.originName) parts.push(result.originName);
+    if (result.year) parts.push(String(result.year));
+    if (result.message) parts.push(result.message);
+    return parts.join("|");
   };
 
   return (
@@ -589,455 +556,423 @@ const ApiCrawl = () => {
             {/* API Status */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-green-500/10">
+                      <Server className="h-5 w-5 text-green-500" />
+                    </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Trạng thái API</p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <p className="text-xs text-muted-foreground">Trạng thái</p>
+                      <div className="flex items-center gap-1">
                         {apiStatus?.status === "online" ? (
                           <>
-                            <CheckCircle2 className="h-5 w-5 text-green-500" />
-                            <span className="text-lg font-semibold text-green-500">Online</span>
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            <span className="font-semibold text-green-500">Online</span>
                           </>
                         ) : (
                           <>
-                            <XCircle className="h-5 w-5 text-destructive" />
-                            <span className="text-lg font-semibold text-destructive">Offline</span>
+                            <XCircle className="h-4 w-4 text-destructive" />
+                            <span className="font-semibold text-destructive">Offline</span>
                           </>
                         )}
                       </div>
                     </div>
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/20">
-                      <Server className="h-6 w-6 text-green-500" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-blue-500/10">
+                      <Activity className="h-5 w-5 text-blue-500" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Độ trễ</p>
+                      <p className="font-semibold">{apiStatus?.latency || 0}ms</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Độ trễ API</p>
-                      <p className="text-2xl font-bold mt-1">{apiStatus?.latency || 0}ms</p>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Film className="h-5 w-5 text-primary" />
                     </div>
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20">
-                      <Activity className="h-6 w-6 text-blue-500" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Tổng phim API</p>
+                      <p className="font-semibold">{newMovies?.pagination?.totalItems?.toLocaleString() || "—"}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-purple-500/10">
+                      <Database className="h-5 w-5 text-purple-500" />
+                    </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Tổng phim API</p>
-                      <p className="text-2xl font-bold mt-1">
-                        {newMovies?.pagination?.totalItems?.toLocaleString() || "—"}
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
-                      <Film className="h-6 w-6 text-primary" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Thể loại / Quốc gia</p>
-                      <p className="text-2xl font-bold mt-1">
-                        {categories?.length || 0} / {countries?.length || 0}
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20">
-                      <Database className="h-6 w-6 text-purple-500" />
+                      <p className="text-xs text-muted-foreground">Thể loại / Quốc gia</p>
+                      <p className="font-semibold">{categories?.length || 0} / {countries?.length || 0}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Crawl Progress */}
-            {isCrawling && (
-              <Card className="border-primary/50">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <Loader2 className="h-6 w-6 text-primary animate-spin" />
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium">{crawlMessage}</span>
-                        <span className="text-sm text-muted-foreground">{Math.round(crawlProgress)}%</span>
-                      </div>
-                      <Progress value={crawlProgress} className="h-2" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            {/* Tabs */}
+            <Tabs defaultValue="manual" className="w-full">
+              <TabsList>
+                <TabsTrigger value="manual">Thủ công</TabsTrigger>
+                <TabsTrigger value="auto">Tự động</TabsTrigger>
+              </TabsList>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Main Crawl Options */}
-              <div className="lg:col-span-2 space-y-6">
-                {/* Crawl by Page */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <FileText className="h-5 w-5" />
-                      Crawl theo trang
-                    </CardTitle>
-                    <CardDescription>
-                      Crawl phim từ danh sách phim mới cập nhật theo trang
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1">
-                        <Label htmlFor="pageFrom">Từ trang</Label>
-                        <Input
-                          id="pageFrom"
-                          type="number"
-                          min="1"
-                          value={pageFrom}
-                          onChange={(e) => setPageFrom(e.target.value)}
-                          placeholder="1"
-                          disabled={isCrawling}
-                        />
-                      </div>
-                      <div className="flex items-center pt-6">
-                        <span className="text-muted-foreground">→</span>
-                      </div>
-                      <div className="flex-1">
-                        <Label htmlFor="pageTo">Đến trang</Label>
-                        <Input
-                          id="pageTo"
-                          type="number"
-                          min="1"
-                          value={pageTo}
-                          onChange={(e) => setPageTo(e.target.value)}
-                          placeholder="3"
-                          disabled={isCrawling}
-                        />
-                      </div>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Ví dụ: 1→3 sẽ crawl trang 1, 2, 3 (mỗi trang ~24 phim)
-                    </p>
-                    <Button 
-                      onClick={handleCrawlByPage} 
-                      disabled={isCrawling}
-                      className="w-full"
-                    >
-                      {isCrawling ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Đang crawl...
-                        </>
-                      ) : (
-                        <>
-                          <Download className="h-4 w-4 mr-2" />
-                          Crawl theo trang
-                        </>
-                      )}
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                {/* Single Movie Crawl */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <LinkIcon className="h-5 w-5" />
-                      Crawl phim cụ thể
-                    </CardTitle>
-                    <CardDescription>
-                      Nhập URL phim để crawl một phim cụ thể
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <Label htmlFor="singleUrl">URL phim</Label>
-                      <Input
-                        id="singleUrl"
-                        value={singleMovieUrl}
-                        onChange={(e) => setSingleMovieUrl(e.target.value)}
-                        placeholder="https://phimapi.com/phim/avatar-lua-va-tro-tan"
-                        disabled={isCrawling}
-                      />
-                    </div>
-                    <Button 
-                      onClick={handleCrawlSingle} 
-                      disabled={isCrawling || !singleMovieUrl.trim()}
-                      className="w-full"
-                    >
-                      {isCrawling ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Đang crawl...
-                        </>
-                      ) : (
-                        <>
-                          <Download className="h-4 w-4 mr-2" />
-                          Crawl phim
-                        </>
-                      )}
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                {/* Bulk Crawl */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Database className="h-5 w-5" />
-                      Crawl hàng loạt
-                    </CardTitle>
-                    <CardDescription>
-                      Paste nhiều URL phim (mỗi URL một dòng) để crawl hàng loạt
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <Label htmlFor="bulkUrls">Danh sách URL</Label>
-                      <Textarea
-                        id="bulkUrls"
-                        value={bulkUrls}
-                        onChange={(e) => setBulkUrls(e.target.value)}
-                        placeholder={`https://phimapi.com/phim/avatar-lua-va-tro-tan\nhttps://phimapi.com/phim/oppenheimer\nhttps://phimapi.com/phim/dune-2`}
-                        rows={5}
-                        disabled={isCrawling}
-                      />
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {bulkUrls.split("\n").filter(u => u.trim()).length} URL được nhập
-                    </p>
-                    <Button 
-                      onClick={handleCrawlBulk} 
-                      disabled={isCrawling || !bulkUrls.trim()}
-                      className="w-full"
-                    >
-                      {isCrawling ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Đang crawl...
-                        </>
-                      ) : (
-                        <>
-                          <Download className="h-4 w-4 mr-2" />
-                          Crawl hàng loạt
-                        </>
-                      )}
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Options Sidebar */}
-              <div className="space-y-6">
+              <TabsContent value="manual" className="space-y-6 mt-6">
                 {/* Skip Options */}
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Settings2 className="h-5 w-5" />
-                      Tùy chọn bỏ qua
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="skipFormat" className="cursor-pointer">Bỏ qua định dạng</Label>
-                      <Switch
-                        id="skipFormat"
-                        checked={skipFormat}
-                        onCheckedChange={setSkipFormat}
-                        disabled={isCrawling}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="skipGenre" className="cursor-pointer">Bỏ qua thể loại</Label>
-                      <Switch
-                        id="skipGenre"
-                        checked={skipGenre}
-                        onCheckedChange={setSkipGenre}
-                        disabled={isCrawling}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="skipCountry" className="cursor-pointer">Bỏ qua quốc gia</Label>
-                      <Switch
-                        id="skipCountry"
-                        checked={skipCountry}
-                        onCheckedChange={setSkipCountry}
-                        disabled={isCrawling}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Image Options */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <ImageIcon className="h-5 w-5" />
-                      Tùy chọn hình ảnh
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="downloadThumb" className="cursor-pointer">Tải & Resize Thumb</Label>
-                        <Switch
-                          id="downloadThumb"
-                          checked={downloadThumb}
-                          onCheckedChange={setDownloadThumb}
-                          disabled={isCrawling}
-                        />
+                  <CardContent className="p-4 space-y-4">
+                    {/* Skip Formats */}
+                    <div>
+                      <Label className="text-orange-500 font-semibold">Bỏ qua định dạng</Label>
+                      <div className="flex flex-wrap gap-4 mt-2">
+                        {FORMAT_OPTIONS.map((format) => (
+                          <div key={format.id} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`format-${format.id}`}
+                              checked={skipFormats.includes(format.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSkipFormats([...skipFormats, format.id]);
+                                } else {
+                                  setSkipFormats(skipFormats.filter(f => f !== format.id));
+                                }
+                              }}
+                              disabled={isCrawling}
+                            />
+                            <Label htmlFor={`format-${format.id}`} className="text-sm cursor-pointer">
+                              {format.label}
+                            </Label>
+                          </div>
+                        ))}
                       </div>
-                      {downloadThumb && (
-                        <div className="flex items-center gap-2 pl-4">
-                          <Label htmlFor="thumbWidth" className="text-sm whitespace-nowrap">Width (px):</Label>
+                    </div>
+
+                    {/* Skip Genres */}
+                    <div>
+                      <Label className="text-orange-500 font-semibold">Bỏ qua thể loại</Label>
+                      <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2">
+                        {GENRE_OPTIONS.map((genre) => (
+                          <div key={genre} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`genre-${genre}`}
+                              checked={skipGenres.includes(genre)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSkipGenres([...skipGenres, genre]);
+                                } else {
+                                  setSkipGenres(skipGenres.filter(g => g !== genre));
+                                }
+                              }}
+                              disabled={isCrawling}
+                            />
+                            <Label htmlFor={`genre-${genre}`} className="text-sm cursor-pointer whitespace-nowrap">
+                              {genre}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Skip Countries */}
+                    <div>
+                      <Label className="text-orange-500 font-semibold">Bỏ qua quốc gia</Label>
+                      <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2">
+                        {COUNTRY_OPTIONS.map((country) => (
+                          <div key={country} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`country-${country}`}
+                              checked={skipCountries.includes(country)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSkipCountries([...skipCountries, country]);
+                                } else {
+                                  setSkipCountries(skipCountries.filter(c => c !== country));
+                                }
+                              }}
+                              disabled={isCrawling}
+                            />
+                            <Label htmlFor={`country-${country}`} className="text-sm cursor-pointer whitespace-nowrap">
+                              {country}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Image Options */}
+                    <div>
+                      <Label className="text-orange-500 font-semibold">Hình ảnh</Label>
+                      <div className="space-y-2 mt-2">
+                        <div className="flex items-center gap-4 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="resize-thumb"
+                              checked={resizeThumb}
+                              onCheckedChange={(checked) => setResizeThumb(!!checked)}
+                              disabled={isCrawling}
+                            />
+                            <Label htmlFor="resize-thumb" className="text-sm cursor-pointer">
+                              Tải & Resize Thumb ={">"} Width (px):
+                            </Label>
+                          </div>
                           <Input
-                            id="thumbWidth"
                             type="number"
                             value={thumbWidth}
                             onChange={(e) => setThumbWidth(e.target.value)}
-                            className="w-24"
-                            disabled={isCrawling}
+                            className="w-20 h-8"
+                            disabled={isCrawling || !resizeThumb}
+                          />
+                          <span className="text-sm">Height (px):</span>
+                          <Input
+                            type="number"
+                            value={thumbHeight}
+                            onChange={(e) => setThumbHeight(e.target.value)}
+                            className="w-20 h-8"
+                            disabled={isCrawling || !resizeThumb}
                           />
                         </div>
-                      )}
-                    </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="downloadPoster" className="cursor-pointer">Tải & Resize Poster</Label>
-                        <Switch
-                          id="downloadPoster"
-                          checked={downloadPoster}
-                          onCheckedChange={setDownloadPoster}
-                          disabled={isCrawling}
-                        />
-                      </div>
-                      {downloadPoster && (
-                        <div className="flex items-center gap-2 pl-4">
-                          <Label htmlFor="posterWidth" className="text-sm whitespace-nowrap">Width (px):</Label>
+                        <div className="flex items-center gap-4 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="resize-poster"
+                              checked={resizePoster}
+                              onCheckedChange={(checked) => setResizePoster(!!checked)}
+                              disabled={isCrawling}
+                            />
+                            <Label htmlFor="resize-poster" className="text-sm cursor-pointer">
+                              Tải & Resize Poster ={">"} Width (px):
+                            </Label>
+                          </div>
                           <Input
-                            id="posterWidth"
                             type="number"
                             value={posterWidth}
                             onChange={(e) => setPosterWidth(e.target.value)}
-                            className="w-24"
-                            disabled={isCrawling}
+                            className="w-20 h-8"
+                            disabled={isCrawling || !resizePoster}
+                          />
+                          <span className="text-sm">Height (px):</span>
+                          <Input
+                            type="number"
+                            value={posterHeight}
+                            onChange={(e) => setPosterHeight(e.target.value)}
+                            className="w-20 h-8"
+                            disabled={isCrawling || !resizePoster}
                           />
                         </div>
-                      )}
-                    </div>
 
-                    <div className="border-t border-border pt-4">
-                      <div className="flex items-start gap-3">
-                        <Checkbox
-                          id="saveAsWebp"
-                          checked={saveAsWebp}
-                          onCheckedChange={(checked) => setSaveAsWebp(checked as boolean)}
-                          disabled={isCrawling}
-                        />
-                        <div className="space-y-1">
-                          <Label htmlFor="saveAsWebp" className="cursor-pointer">
-                            Lưu ảnh định dạng WebP
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id="save-webp"
+                            checked={saveAsWebp}
+                            onCheckedChange={(checked) => setSaveAsWebp(!!checked)}
+                            disabled={isCrawling}
+                          />
+                          <Label htmlFor="save-webp" className="text-sm cursor-pointer">
+                            Lưu định dạng webp
                           </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Nếu bật: lưu ảnh lên server. Nếu tắt: dùng link ảnh từ API.
-                          </p>
                         </div>
                       </div>
-                    </div>
 
-                    {saveAsWebp && (
-                      <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                        <AlertCircle className="h-4 w-4 text-yellow-500 flex-shrink-0" />
-                        <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                          Cần cấu hình storage bucket để lưu ảnh
-                        </p>
-                      </div>
-                    )}
+                      <Button variant="outline" size="sm" className="mt-3" disabled={isCrawling}>
+                        Lưu cấu hình
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
-              </div>
-            </div>
 
-            {/* Crawl History */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Lịch sử Crawl</CardTitle>
-                <CardDescription>
-                  Các lần crawl gần đây
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Loại</TableHead>
-                        <TableHead>Trạng thái</TableHead>
-                        <TableHead>Thêm mới</TableHead>
-                        <TableHead>Cập nhật</TableHead>
-                        <TableHead>Thời gian</TableHead>
-                        <TableHead>Ngày</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {loadingLogs ? (
-                        Array.from({ length: 5 }).map((_, i) => (
-                          <TableRow key={i}>
-                            <TableCell><div className="h-4 w-32 bg-muted animate-pulse rounded" /></TableCell>
-                            <TableCell><div className="h-4 w-16 bg-muted animate-pulse rounded" /></TableCell>
-                            <TableCell><div className="h-4 w-8 bg-muted animate-pulse rounded" /></TableCell>
-                            <TableCell><div className="h-4 w-8 bg-muted animate-pulse rounded" /></TableCell>
-                            <TableCell><div className="h-4 w-12 bg-muted animate-pulse rounded" /></TableCell>
-                            <TableCell><div className="h-4 w-24 bg-muted animate-pulse rounded" /></TableCell>
-                          </TableRow>
-                        ))
-                      ) : crawlLogs && crawlLogs.length > 0 ? (
-                        crawlLogs.map((log) => (
-                          <TableRow key={log.id}>
-                            <TableCell className="font-medium">{log.type}</TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={
-                                  log.status === "success"
-                                    ? "border-green-500/50 text-green-500"
-                                    : log.status === "running"
-                                    ? "border-blue-500/50 text-blue-500"
-                                    : "border-red-500/50 text-red-500"
-                                }
-                              >
-                                {log.status === "success" ? "Thành công" : log.status === "running" ? "Đang chạy" : "Lỗi"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-green-500">+{log.movies_added}</TableCell>
-                            <TableCell className="text-blue-500">{log.movies_updated}</TableCell>
-                            <TableCell>{log.duration || "—"}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatDate(log.created_at)}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                            Chưa có lịch sử crawl
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                {/* Crawl Controls */}
+                <Card>
+                  <CardContent className="p-4 space-y-4">
+                    {/* Page Crawl */}
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <Label className="whitespace-nowrap">Page Crawl: From</Label>
+                      <Input
+                        type="number"
+                        value={pageFrom}
+                        onChange={(e) => setPageFrom(e.target.value)}
+                        className="w-24 h-8"
+                        min="1"
+                        disabled={isCrawling}
+                      />
+                      <span>To</span>
+                      <Input
+                        type="number"
+                        value={pageTo}
+                        onChange={(e) => setPageTo(e.target.value)}
+                        className="w-24 h-8"
+                        min="1"
+                        disabled={isCrawling}
+                      />
+                    </div>
+
+                    {/* URL API */}
+                    <div className="flex items-center gap-4">
+                      <Label className="whitespace-nowrap">Url API</Label>
+                      <Input
+                        value={apiUrl}
+                        onChange={(e) => setApiUrl(e.target.value)}
+                        className="flex-1 h-8"
+                        placeholder="https://phimapi.com/danh-sach/phim-moi-cap-nhat"
+                        disabled={isCrawling}
+                      />
+                      <Button 
+                        onClick={handleGetListMovies} 
+                        disabled={isCrawling}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {isCrawling ? <Loader2 className="h-4 w-4 animate-spin" /> : "Get List Movies"}
+                      </Button>
+                    </div>
+
+                    {/* Wait Timeout */}
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <Label className="whitespace-nowrap">Wait Timeout Random: From</Label>
+                      <Input
+                        type="number"
+                        value={waitFrom}
+                        onChange={(e) => setWaitFrom(e.target.value)}
+                        className="w-28 h-8"
+                        disabled={isCrawling}
+                      />
+                      <span>(ms) - To</span>
+                      <Input
+                        type="number"
+                        value={waitTo}
+                        onChange={(e) => setWaitTo(e.target.value)}
+                        className="w-28 h-8"
+                        disabled={isCrawling}
+                      />
+                      <span>(ms)</span>
+                    </div>
+
+                    {/* Movie List Textarea */}
+                    <Textarea
+                      value={movieList}
+                      onChange={(e) => setMovieList(e.target.value)}
+                      placeholder="Danh sách URL phim (mỗi URL một dòng)&#10;https://phimapi.com/phim/ten-phim-1&#10;https://phimapi.com/phim/ten-phim-2"
+                      className="min-h-[200px] font-mono text-sm"
+                      disabled={isCrawling}
+                    />
+
+                    {/* Progress */}
+                    {isCrawling && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground truncate flex-1 mr-4">
+                            {currentCrawling}
+                          </span>
+                          <span className="font-medium">{Math.round(crawlProgress)}%</span>
+                        </div>
+                        <Progress value={crawlProgress} className="h-2" />
+                      </div>
+                    )}
+
+                    {/* Buttons */}
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="destructive" 
+                        onClick={handleShuffleList}
+                        disabled={isCrawling || !movieList.trim()}
+                      >
+                        <Shuffle className="h-4 w-4 mr-2" />
+                        Trộn Link
+                      </Button>
+                      <Button 
+                        onClick={handleCrawlMovies}
+                        disabled={isCrawling || !movieList.trim()}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {isCrawling ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Play className="h-4 w-4 mr-2" />
+                        )}
+                        Crawl Movies
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Crawl Results */}
+                <div className="space-y-4">
+                  {/* Current Crawling */}
+                  {(isCrawling || crawlResults.length > 0) && (
+                    <div>
+                      <div className="bg-orange-500 text-white px-3 py-1.5 text-sm font-medium">
+                        Crawl Movies: {currentCrawling || "Đang chờ..."}
+                      </div>
+                      <div className="border border-orange-500 p-3 max-h-[200px] overflow-auto bg-background">
+                        {crawlResults.map((result, index) => (
+                          <div key={index} className="text-sm font-mono text-orange-600">
+                            {formatResultLine(result)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Success Results */}
+                  {successResults.length > 0 && (
+                    <div>
+                      <div className="bg-green-600 text-white px-3 py-1.5 text-sm font-medium">
+                        Crawl Thành Công ({successResults.length})
+                      </div>
+                      <div className="border border-green-600 p-3 max-h-[200px] overflow-auto bg-background">
+                        {successResults.map((result, index) => (
+                          <div key={index} className="text-sm font-mono text-green-600">
+                            {formatResultLine(result)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error Results */}
+                  {errorResults.length > 0 && (
+                    <div>
+                      <div className="bg-red-600 text-white px-3 py-1.5 text-sm font-medium">
+                        Crawl Lỗi ({errorResults.length})
+                      </div>
+                      <div className="border border-red-600 p-3 max-h-[200px] overflow-auto bg-background">
+                        {errorResults.map((result, index) => (
+                          <div key={index} className="text-sm font-mono text-red-600">
+                            {formatResultLine(result)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
+              </TabsContent>
+
+              <TabsContent value="auto" className="mt-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Crawl Tự Động</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-muted-foreground">
+                      Chức năng crawl tự động sẽ được phát triển trong phiên bản tiếp theo.
+                    </p>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </div>
         </main>
       </div>
