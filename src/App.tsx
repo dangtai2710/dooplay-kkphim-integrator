@@ -20,6 +20,7 @@ import YearsManagement from "./pages/admin/YearsManagement";
 import TagsManagement from "./pages/admin/TagsManagement";
 import DirectorsManagement from "./pages/admin/DirectorsManagement";
 import ActorsManagement from "./pages/admin/ActorsManagement";
+import MovieEdit from "./pages/admin/MovieEdit";
 import NotFound from "./pages/NotFound";
 import { Header } from "./components/Header";
 
@@ -70,6 +71,14 @@ const App = () => (
               element={
                 <ProtectedAdminRoute>
                   <MoviesManagement />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/movies/:id"
+              element={
+                <ProtectedAdminRoute>
+                  <MovieEdit />
                 </ProtectedAdminRoute>
               }
             />
