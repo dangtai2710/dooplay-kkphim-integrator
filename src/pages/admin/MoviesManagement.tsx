@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Film, Search, Plus, Pencil, Trash2, Eye, MoreVertical, Calendar, Globe, Tag, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -44,6 +45,7 @@ import { toast } from "sonner";
 const ITEMS_PER_PAGE = 20;
 
 const MoviesManagement = () => {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -201,7 +203,7 @@ const MoviesManagement = () => {
                 <h1 className="text-xl font-bold">Danh sách phim</h1>
                 <p className="text-sm text-muted-foreground">Quản lý tất cả phim trong hệ thống</p>
               </div>
-              <Button>
+              <Button onClick={() => navigate("/admin/movies/new")}>
                 <Plus className="h-4 w-4 mr-2" />
                 Thêm phim
               </Button>
