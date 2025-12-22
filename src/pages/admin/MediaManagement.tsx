@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,6 +67,7 @@ const getFileIcon = (mimetype: string) => {
 const MediaManagement = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedFile, setSelectedFile] = useState<MediaFile | null>(null);
@@ -138,15 +140,32 @@ const MediaManagement = () => {
     event.target.value = "";
   };
 
-  // Delete file
+  // Soft delete - move to trash
   const deleteMutation = useMutation({
-    mutationFn: async (fileName: string) => {
-      const { error } = await supabase.storage.from("media").remove([fileName]);
-      if (error) throw error;
+    mutationFn: async (file: MediaFile) => {
+      // Insert into deleted_media table
+      const { error: insertError } = await supabase
+        .from("deleted_media")
+        .insert({
+          file_name: file.name,
+          file_path: file.name,
+          file_size: file.metadata?.size || 0,
+          mime_type: file.metadata?.mimetype || null,
+          deleted_by: user?.id,
+        });
+      
+      if (insertError) throw insertError;
+      
+      // Move file to trash folder in storage
+      const { error: moveError } = await supabase.storage
+        .from("media")
+        .move(file.name, `trash/${file.name}`);
+      
+      if (moveError) throw moveError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["media-files"] });
-      toast({ title: "Đã xóa file" });
+      toast({ title: "Đã chuyển vào thùng rác" });
       setFileToDelete(null);
       setSelectedFile(null);
     },
@@ -460,19 +479,19 @@ const MediaManagement = () => {
       <AlertDialog open={!!fileToDelete} onOpenChange={() => setFileToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+            <AlertDialogTitle>Chuyển vào thùng rác</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn có chắc chắn muốn xóa file "{fileToDelete?.name}"? 
-              Hành động này không thể hoàn tác.
+              File "{fileToDelete?.name}" sẽ được chuyển vào thùng rác và tự động xóa sau 30 ngày.
+              Bạn có thể khôi phục file từ thùng rác.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Hủy</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => fileToDelete && deleteMutation.mutate(fileToDelete.name)}
+              onClick={() => fileToDelete && deleteMutation.mutate(fileToDelete)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Xóa
+              Chuyển vào thùng rác
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

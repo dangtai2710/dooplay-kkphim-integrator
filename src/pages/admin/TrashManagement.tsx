@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2, RotateCcw, AlertTriangle, Film, FileText, FolderOpen, Globe, Calendar, Tag, Clapperboard, UserCircle, Clock, Eraser } from "lucide-react";
+import { Trash2, RotateCcw, AlertTriangle, Film, FileText, FolderOpen, Globe, Calendar, Tag, Clapperboard, UserCircle, Clock, Eraser, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +34,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { toast } from "sonner";
 import { format, differenceInDays, addDays } from "date-fns";
 
-type TrashItemType = "movies" | "posts" | "genres" | "countries" | "years" | "tags" | "directors" | "actors" | "post_categories";
+type TrashItemType = "movies" | "posts" | "genres" | "countries" | "years" | "tags" | "directors" | "actors" | "post_categories" | "media";
 
 const RETENTION_DAYS = 30;
 
@@ -50,6 +50,20 @@ const TrashManagement = () => {
   const { data: deletedItems, isLoading } = useQuery({
     queryKey: ["trash", activeTab],
     queryFn: async () => {
+      // Special handling for media
+      if (activeTab === "media") {
+        const { data, error } = await supabase
+          .from("deleted_media")
+          .select("*")
+          .order("deleted_at", { ascending: false });
+        
+        if (error) {
+          console.error("Trash query error:", error);
+          throw error;
+        }
+        return data || [];
+      }
+      
       // For items with deleted_at, query with not null filter
       const { data, error } = await supabase
         .from(activeTab)
@@ -76,6 +90,23 @@ const TrashManagement = () => {
   // Restore mutation
   const restoreMutation = useMutation({
     mutationFn: async (ids: string[]) => {
+      if (activeTab === "media") {
+        // Restore media files
+        for (const id of ids) {
+          const item = deletedItems?.find((i: any) => i.id === id) as any;
+          if (item?.file_name) {
+            // Move file back from trash folder
+            await supabase.storage
+              .from("media")
+              .move(`trash/${item.file_name}`, item.file_name);
+            
+            // Delete from deleted_media table
+            await supabase.from("deleted_media").delete().eq("id", id);
+          }
+        }
+        return;
+      }
+      
       const { error } = await supabase
         .from(activeTab)
         .update({ deleted_at: null })
@@ -85,6 +116,7 @@ const TrashManagement = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["trash", activeTab] });
       queryClient.invalidateQueries({ queryKey: [`admin-${activeTab}`] });
+      queryClient.invalidateQueries({ queryKey: ["media-files"] });
       toast.success(`Đã khôi phục ${selectedIds.length} mục`);
       setSelectedIds([]);
       setShowRestoreDialog(false);
@@ -97,6 +129,23 @@ const TrashManagement = () => {
   // Permanent delete mutation
   const permanentDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
+      if (activeTab === "media") {
+        // Permanently delete media files
+        for (const id of ids) {
+          const item = deletedItems?.find((i: any) => i.id === id) as any;
+          if (item?.file_name) {
+            // Delete file from storage
+            await supabase.storage
+              .from("media")
+              .remove([`trash/${item.file_name}`]);
+            
+            // Delete from deleted_media table
+            await supabase.from("deleted_media").delete().eq("id", id);
+          }
+        }
+        return;
+      }
+      
       const { error } = await supabase
         .from(activeTab)
         .delete()
@@ -117,6 +166,22 @@ const TrashManagement = () => {
   // Empty all trash for current tab
   const emptyTrashMutation = useMutation({
     mutationFn: async () => {
+      if (activeTab === "media") {
+        // Delete all files in trash folder and records
+        const items = deletedItems || [];
+        for (const item of items) {
+          await supabase.storage
+            .from("media")
+            .remove([`trash/${(item as any).file_name}`]);
+        }
+        const { error } = await supabase
+          .from("deleted_media")
+          .delete()
+          .neq("id", "00000000-0000-0000-0000-000000000000"); // Delete all
+        if (error) throw error;
+        return;
+      }
+      
       const { error } = await supabase
         .from(activeTab)
         .delete()
@@ -156,11 +221,11 @@ const TrashManagement = () => {
   };
 
   const getItemName = (item: any): string => {
-    return item.name || item.title || item.year?.toString() || "Không tên";
+    return item.name || item.title || item.file_name || item.year?.toString() || "Không tên";
   };
 
   const getTabIcon = (type: TrashItemType) => {
-    const icons = {
+    const icons: Record<TrashItemType, any> = {
       movies: Film,
       posts: FileText,
       genres: FolderOpen,
@@ -170,6 +235,7 @@ const TrashManagement = () => {
       directors: Clapperboard,
       actors: UserCircle,
       post_categories: FolderOpen,
+      media: ImageIcon,
     };
     return icons[type];
   };
@@ -178,6 +244,7 @@ const TrashManagement = () => {
     { value: "movies", label: "Phim" },
     { value: "posts", label: "Bài viết" },
     { value: "post_categories", label: "Danh mục BV" },
+    { value: "media", label: "Media" },
     { value: "genres", label: "Thể loại" },
     { value: "countries", label: "Quốc gia" },
     { value: "years", label: "Năm" },
