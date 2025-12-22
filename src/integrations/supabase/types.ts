@@ -116,6 +116,36 @@ export type Database = {
         }
         Relationships: []
       }
+      deleted_media: {
+        Row: {
+          deleted_at: string
+          deleted_by: string | null
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: string
+          mime_type: string | null
+        }
+        Insert: {
+          deleted_at?: string
+          deleted_by?: string | null
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+        }
+        Update: {
+          deleted_at?: string
+          deleted_by?: string | null
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+        }
+        Relationships: []
+      }
       directors: {
         Row: {
           avatar_url: string | null
