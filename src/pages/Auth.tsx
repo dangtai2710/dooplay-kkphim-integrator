@@ -27,12 +27,18 @@ const Auth = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (user && !isLoading) {
-      if (isAdmin) {
-        navigate("/admin");
-      } else {
-        navigate("/");
-      }
+    // Only redirect if user is logged in AND we're not currently loading
+    // Also check if this is a fresh navigation (not already on auth page)
+    if (user && !isLoading && isAdmin !== undefined) {
+      // Small delay to ensure admin check is complete
+      const timer = setTimeout(() => {
+        if (isAdmin) {
+          navigate("/admin", { replace: true });
+        } else {
+          navigate("/", { replace: true });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
     }
   }, [user, isLoading, isAdmin, navigate]);
 
