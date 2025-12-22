@@ -189,31 +189,23 @@ const ApiCrawl = () => {
         .maybeSingle();
 
       let movieId: string;
+      let isUpdate = false;
 
       if (existingMovie) {
-        // Update existing movie
+        // Movie exists - only update episode info, keep other properties
+        movieId = existingMovie.id;
+        isUpdate = true;
+        
+        // Only update episode-related fields
         const { error: updateError } = await supabase
           .from("movies")
           .update({
-            name: movie.name,
-            origin_name: movie.origin_name,
-            content: movie.content,
-            type: movie.type,
-            status: movie.status,
-            poster_url: movie.poster_url,
-            thumb_url: movie.thumb_url,
-            trailer_url: movie.trailer_url,
-            time: movie.time,
             episode_current: movie.episode_current,
             episode_total: movie.episode_total,
-            quality: movie.quality,
-            lang: movie.lang,
-            year: movie.year,
           })
           .eq("id", existingMovie.id);
 
         if (updateError) throw updateError;
-        movieId = existingMovie.id;
       } else {
         // Insert new movie
         const { data: newMovie, error: insertError } = await supabase
