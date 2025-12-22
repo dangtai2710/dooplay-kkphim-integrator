@@ -11,8 +11,9 @@ import {
   LogOut,
   ChevronDown
 } from "lucide-react";
-import { NavLink } from "@/components/NavLink";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useLocation } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Sidebar,
   SidebarContent,
@@ -49,10 +50,17 @@ const systemNavItems = [
 
 export function AdminSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { state } = useSidebar();
+  const { user, signOut } = useAuth();
   const isCollapsed = state === "collapsed";
 
   const isActive = (path: string) => location.pathname === path;
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/auth");
+  };
 
   return (
     <Sidebar className="border-r border-border/50" collapsible="icon">
@@ -87,8 +95,9 @@ export function AdminSidebar() {
                     <NavLink 
                       to={item.url} 
                       end 
-                      className="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-muted/50"
-                      activeClassName="bg-primary/10 text-primary"
+                      className={({ isActive }) => 
+                        `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-muted/50 ${isActive ? "bg-primary/10 text-primary" : ""}`
+                      }
                     >
                       <item.icon className="h-5 w-5" />
                       {!isCollapsed && <span>{item.title}</span>}
@@ -116,8 +125,9 @@ export function AdminSidebar() {
                     <NavLink 
                       to={item.url} 
                       end 
-                      className="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-muted/50"
-                      activeClassName="bg-primary/10 text-primary"
+                      className={({ isActive }) => 
+                        `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-muted/50 ${isActive ? "bg-primary/10 text-primary" : ""}`
+                      }
                     >
                       <item.icon className="h-5 w-5" />
                       {!isCollapsed && <span>{item.title}</span>}
@@ -137,12 +147,16 @@ export function AdminSidebar() {
           </div>
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">Admin</p>
-              <p className="text-xs text-muted-foreground truncate">admin@phim.app</p>
+              <p className="text-sm font-medium truncate">{user?.email?.split("@")[0] || "Admin"}</p>
+              <p className="text-xs text-muted-foreground truncate">{user?.email || ""}</p>
             </div>
           )}
           {!isCollapsed && (
-            <button className="p-2 hover:bg-muted rounded-lg transition-colors">
+            <button 
+              onClick={handleSignOut}
+              className="p-2 hover:bg-muted rounded-lg transition-colors"
+              title="Đăng xuất"
+            >
               <LogOut className="h-4 w-4 text-muted-foreground" />
             </button>
           )}
